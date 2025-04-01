@@ -180,16 +180,32 @@ class StaffEditForm(CustomUserForm):
 
 
 class EditResultForm(FormSettings):
-    session_list = Session.objects.all()
-    session_year = forms.ModelChoiceField(
-        label="Session Year", queryset=session_list, required=True)
-
     def __init__(self, *args, **kwargs):
         super(EditResultForm, self).__init__(*args, **kwargs)
 
     class Meta:
         model = StudentResult
-        fields = ['session_year', 'subject', 'student', 'test', 'exam']
+        fields = ['subject', 'student', 'semester', 'academic_year', 'internal_marks', 'external_marks', 'practical_marks']
+        widgets = {
+            'internal_marks': forms.NumberInput(attrs={'min': 0, 'max': 20, 'step': 0.5}),
+            'external_marks': forms.NumberInput(attrs={'min': 0, 'max': 60, 'step': 0.5}),
+            'practical_marks': forms.NumberInput(attrs={'min': 0, 'max': 20, 'step': 0.5}),
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        internal_marks = cleaned_data.get('internal_marks', 0)
+        external_marks = cleaned_data.get('external_marks', 0)
+        practical_marks = cleaned_data.get('practical_marks', 0)
+
+        if internal_marks > 20:
+            self.add_error('internal_marks', 'Internal marks cannot exceed 20')
+        if external_marks > 60:
+            self.add_error('external_marks', 'External marks cannot exceed 60')
+        if practical_marks > 20:
+            self.add_error('practical_marks', 'Practical marks cannot exceed 20')
+
+        return cleaned_data
 
 #todos
 # class TodoForm(forms.ModelForm):

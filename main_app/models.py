@@ -194,10 +194,102 @@ class NotificationStudent(models.Model):
 class StudentResult(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
-    test = models.FloatField(default=0)
-    exam = models.FloatField(default=0)
+    internal_marks = models.FloatField(default=0)
+    external_marks = models.FloatField(default=0)
+    practical_marks = models.FloatField(default=0)
+    semester = models.CharField(max_length=10, default='')
+    academic_year = models.CharField(max_length=10, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.student.admin.first_name} {self.student.admin.last_name} - {self.subject.name}"
+
+
+class ExamHall(models.Model):
+    name = models.CharField(max_length=100)
+    capacity = models.IntegerField()
+    rows = models.IntegerField()
+    columns = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+class ExamSubject(models.Model):
+    exam = models.ForeignKey('Exam', on_delete=models.CASCADE, related_name='exam_subjects')
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    date = models.DateField(null=True, blank=True)
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('exam', 'subject')
+
+    def __str__(self):
+        return f"{self.exam.name} - {self.subject.name}"
+
+class Exam(models.Model):
+    name = models.CharField(max_length=200)
+    course = models.ForeignKey(Course, on_delete=models.CASCADE)
+    hall = models.ForeignKey(ExamHall, on_delete=models.CASCADE)
+    date = models.DateField(null=True, blank=True)
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def subjects(self):
+        return [exam_subject.subject for exam_subject in self.exam_subjects.all()]
+
+    @property
+    def start_date(self):
+        """Returns the earliest exam date"""
+        exam_subjects = self.exam_subjects.all()
+        if exam_subjects:
+            return min(exam_subject.date for exam_subject in exam_subjects)
+        return None
+
+    @property
+    def end_date(self):
+        """Returns the latest exam date"""
+        exam_subjects = self.exam_subjects.all()
+        if exam_subjects:
+            return max(exam_subject.date for exam_subject in exam_subjects)
+        return None
+
+class HallTicket(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    exam = models.ForeignKey(Exam, on_delete=models.CASCADE)
+    hall_ticket_number = models.CharField(max_length=20, unique=True)
+    seat_number = models.CharField(max_length=10)
+    bench_number = models.CharField(max_length=10)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.student.admin.first_name} - {self.hall_ticket_number}"
+
+    def save(self, *args, **kwargs):
+        if not self.hall_ticket_number:
+            # Generate hall ticket number: HT-YYYY-XXXXX
+            year = datetime.now().year
+            last_ticket = HallTicket.objects.filter(hall_ticket_number__startswith=f'HT-{year}').order_by('-hall_ticket_number').first()
+            if last_ticket:
+                last_number = int(last_ticket.hall_ticket_number.split('-')[2])
+                new_number = last_number + 1
+            else:
+                new_number = 1
+            self.hall_ticket_number = f'HT-{year}-{new_number:05d}'
+        super().save(*args, **kwargs)
 
 
 @receiver(post_save, sender=CustomUser)
@@ -221,3 +313,78 @@ def save_user_profile(sender, instance, **kwargs):
         instance.student.save()
 
 # todos
+
+class KTApplication(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    semester = models.CharField(max_length=10)
+    application_date = models.DateField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=[
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected')
+    ], default='pending')
+    remarks = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.student.admin.first_name} - {self.subject.name}"
+
+class RevaluationApplication(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    semester = models.CharField(max_length=10)
+    current_marks = models.DecimalField(max_digits=5, decimal_places=2)
+    application_date = models.DateField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=[
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected')
+    ], default='pending')
+    remarks = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.student.admin.first_name} - {self.subject.name}"
+
+class Notification(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    notification_type = models.CharField(max_length=20, choices=[
+        ('kt', 'KT Application'),
+        ('revaluation', 'Revaluation Application'),
+        ('general', 'General')
+    ])
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.title} - {self.user.get_full_name()}"
+
+class ChatBot(models.Model):
+    question = models.TextField()
+    answer = models.TextField()
+    category = models.CharField(max_length=50, choices=[
+        ('general', 'General'),
+        ('academic', 'Academic'),
+        ('attendance', 'Attendance'),
+        ('exams', 'Exams'),
+        ('fees', 'Fees'),
+        ('library', 'Library'),
+        ('hostel', 'Hostel'),
+        ('logical', 'Logical'),
+        ('mathematics', 'Mathematics'),
+        ('technical', 'Technical'),
+        ('other', 'Other')
+    ])
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.category}: {self.question[:50]}..."
+
+    class Meta:
+        ordering = ['-created_at']

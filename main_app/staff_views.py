@@ -6,11 +6,22 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import (HttpResponseRedirect, get_object_or_404,redirect, render)
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
+from django.template.loader import render_to_string
+import tempfile
+from datetime import date, datetime
+from xhtml2pdf import pisa
+from io import BytesIO
+
+# Try importing xhtml2pdf, but don't fail if it's not available
+try:
+    from xhtml2pdf import pisa
+    PDF_GENERATION_AVAILABLE = True
+except ImportError:
+    PDF_GENERATION_AVAILABLE = False
 
 from .forms import *
 from .models import *
 from . import forms, models
-from datetime import date
 
 def staff_home(request):
     staff = get_object_or_404(Staff, admin=request.user)
@@ -55,21 +66,28 @@ def staff_take_attendance(request):
 def get_students(request):
     subject_id = request.POST.get('subject')
     session_id = request.POST.get('session')
+    
     try:
         subject = get_object_or_404(Subject, id=subject_id)
-        session = get_object_or_404(Session, id=session_id)
-        students = Student.objects.filter(
-            course_id=subject.course.id, session=session)
+        
+        # If session_id is provided, use it for attendance
+        if session_id:
+            session = get_object_or_404(Session, id=session_id)
+            students = Student.objects.filter(course_id=subject.course.id, session=session)
+        else:
+            # For result entry, get all students in the course
+            students = Student.objects.filter(course_id=subject.course.id)
+        
         student_data = []
         for student in students:
             data = {
-                    "id": student.id,
-                    "name": student.admin.last_name + " " + student.admin.first_name
-                    }
+                "id": student.id,
+                "name": f"{student.admin.first_name} {student.admin.last_name} ({student.admin.email})"
+            }
             student_data.append(data)
         return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
     except Exception as e:
-        return e
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
@@ -257,34 +275,55 @@ def staff_view_notification(request):
 def staff_add_result(request):
     staff = get_object_or_404(Staff, admin=request.user)
     subjects = Subject.objects.filter(staff=staff)
-    sessions = Session.objects.all()
     context = {
         'page_title': 'Result Upload',
-        'subjects': subjects,
-        'sessions': sessions
+        'subjects': subjects
     }
+    
     if request.method == 'POST':
         try:
-            student_id = request.POST.get('student_list')
+            student_id = request.POST.get('student')
             subject_id = request.POST.get('subject')
-            test = request.POST.get('test')
-            exam = request.POST.get('exam')
+            semester = request.POST.get('semester')
+            academic_year = request.POST.get('academic_year')
+            internal_marks = float(request.POST.get('internal_marks', 0))
+            external_marks = float(request.POST.get('external_marks', 0))
+            practical_marks = float(request.POST.get('practical_marks', 0))
+            
             student = get_object_or_404(Student, id=student_id)
             subject = get_object_or_404(Subject, id=subject_id)
-            try:
-                data = StudentResult.objects.get(
-                    student=student, subject=subject)
-                data.exam = exam
-                data.test = test
-                data.save()
-                messages.success(request, "Scores Updated")
-            except:
-                result = StudentResult(student=student, subject=subject, test=test, exam=exam)
-                result.save()
-                messages.success(request, "Scores Saved")
+            
+            # Check if result already exists
+            existing_result = StudentResult.objects.filter(
+                student=student,
+                subject=subject,
+                semester=semester,
+                academic_year=academic_year
+            ).first()
+            
+            if existing_result:
+                messages.error(request, 'Result already exists for this student in this semester')
+                return redirect('staff_add_result')
+            
+            # Create new result
+            StudentResult.objects.create(
+                student=student,
+                subject=subject,
+                semester=semester,
+                academic_year=academic_year,
+                internal_marks=internal_marks,
+                external_marks=external_marks,
+                practical_marks=practical_marks
+            )
+            
+            messages.success(request, 'Result added successfully')
+            return redirect('staff_add_result')
+            
         except Exception as e:
-            messages.warning(request, "Error Occured While Processing Form")
-    return render(request, "staff_template/staff_add_result.html", context)
+            messages.error(request, f'Error adding result: {str(e)}')
+            return redirect('staff_add_result')
+    
+    return render(request, "main_app/staff/add_result.html", context)
 
 
 @csrf_exempt
@@ -292,16 +331,38 @@ def fetch_student_result(request):
     try:
         subject_id = request.POST.get('subject')
         student_id = request.POST.get('student')
-        student = get_object_or_404(Student, id=student_id)
+        
+        if not subject_id or not student_id:
+            return JsonResponse({'error': 'Subject and student are required'}, status=400)
+            
         subject = get_object_or_404(Subject, id=subject_id)
-        result = StudentResult.objects.get(student=student, subject=subject)
-        result_data = {
-            'exam': result.exam,
-            'test': result.test
-        }
-        return HttpResponse(json.dumps(result_data))
+        student = get_object_or_404(Student, id=student_id)
+        
+        # Get the latest result for this student and subject
+        result = StudentResult.objects.filter(
+            student=student,
+            subject=subject
+        ).order_by('-academic_year', '-semester').first()
+        
+        if result:
+            return JsonResponse({
+                'internal_marks': float(result.internal_marks),
+                'external_marks': float(result.external_marks),
+                'practical_marks': float(result.practical_marks),
+                'semester': result.semester,
+                'academic_year': result.academic_year
+            })
+        else:
+            return JsonResponse({
+                'internal_marks': 0,
+                'external_marks': 0,
+                'practical_marks': 0,
+                'semester': '',
+                'academic_year': ''
+            })
+            
     except Exception as e:
-        return HttpResponse('False')
+        return JsonResponse({'error': str(e)}, status=500)
 
 #library
 def add_book(request):
@@ -355,3 +416,88 @@ def view_issued_book(request):
             i=i+1
             details.append(t)
     return render(request, "staff_template/view_issued_book.html", {'issuedBooks':issuedBooks, 'details':details})
+
+def generate_result(request):
+    if request.method == 'POST':
+        subject_id = request.POST.get('subject')
+        semester = request.POST.get('semester')
+        academic_year = request.POST.get('academic_year')
+        
+        subject = get_object_or_404(Subject, id=subject_id)
+        staff = get_object_or_404(Staff, admin=request.user)
+        
+        if subject.staff != staff:
+            messages.error(request, "You don't have permission to generate results for this subject")
+            return redirect('staff_home')
+            
+        results = StudentResult.objects.filter(
+            subject=subject,
+            semester=semester,
+            academic_year=academic_year
+        ).order_by('student__admin__email')
+        
+        context = {
+            'subject': subject,
+            'semester': semester,
+            'academic_year': academic_year,
+            'results': results,
+            'today': datetime.now(),
+            'page_title': f"Result Sheet - {subject.name}"
+        }
+        
+        return render(request, 'main_app/staff/result_sheet.html', context)
+    else:
+        staff = get_object_or_404(Staff, admin=request.user)
+        subjects = Subject.objects.filter(staff=staff)
+        context = {
+            'subjects': subjects,
+            'page_title': 'Generate Result'
+        }
+        return render(request, 'main_app/staff/generate_result.html', context)
+
+def download_result(request, subject_id, semester, academic_year):
+    subject = get_object_or_404(Subject, id=subject_id)
+    staff = get_object_or_404(Staff, admin=request.user)
+    
+    if subject.staff != staff:
+        messages.error(request, "You don't have permission to download results for this subject")
+        return redirect('staff_home')
+        
+    results = StudentResult.objects.filter(
+        subject=subject,
+        semester=semester,
+        academic_year=academic_year
+    ).order_by('student__admin__email')
+    
+    context = {
+        'subject': subject,
+        'semester': semester,
+        'academic_year': academic_year,
+        'results': results,
+        'today': datetime.now(),
+        'page_title': f"Result Sheet - {subject.name}"
+    }
+    
+    if not PDF_GENERATION_AVAILABLE:
+        messages.error(request, "PDF generation is not available. Please install xhtml2pdf.")
+        return redirect('staff_generate_result')
+    
+    try:
+        html_string = render_to_string('staff_template/result_sheet.html', context)
+        
+        # Create a BytesIO object to receive the PDF data
+        buffer = BytesIO()
+        
+        # Create the PDF object, using the BytesIO object as its "file."
+        pisa.pisaDocument(BytesIO(html_string.encode("UTF-8")), buffer)
+        
+        # Get the value of the BytesIO buffer and write it to the response
+        pdf = buffer.getvalue()
+        buffer.close()
+        
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="result_sheet_{subject.name}_{semester}_{academic_year}.pdf"'
+        return response
+    except Exception as e:
+        messages.error(request, f"Error generating PDF: {str(e)}")
+        return redirect('staff_generate_result')

@@ -5,7 +5,7 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>SIGCE College Portal</title>
+    <title>SIES GST College Portal</title>
     <!-- Tell the browser to be responsive to screen width -->
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- Font Awesome -->
@@ -52,9 +52,13 @@
         <!-- /.navbar -->
 
         <!-- Main Sidebar Container -->
-          
- 
-        {% include "main_app/sidebar_template.html" with user=user %}
+        {% if user.user_type == '1' %}
+            {% include "main_app/hod/sidebar_template.html" with user=user %}
+        {% elif user.user_type == '2' %}
+            {% include "main_app/staff/sidebar_template.html" with user=user %}
+        {% elif user.user_type == '3' %}
+            {% include "main_app/student/sidebar_template.html" with user=user %}
+        {% endif %}
 
       
         <div class="content-wrapper">

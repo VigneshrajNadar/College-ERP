@@ -1,0 +1,52 @@
+{% extends 'main_app/base.html' %}
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Hall Tickets for {{ exam.name }}</h3>
+                    <p class="mb-0">{{ exam.subject.name }} - {{ exam.course.name }}</p>
+                    <p class="mb-0">Date: {{ exam.date }} | Time: {{ exam.start_time }} - {{ exam.end_time }}</p>
+                    <p class="mb-0">Hall: {{ exam.hall.name }}</p>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Hall Ticket No.</th>
+                                    <th>Student Name</th>
+                                    <th>Roll No.</th>
+                                    <th>Seat No.</th>
+                                    <th>Bench No.</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ticket in tickets %}
+                                <tr>
+                                    <td>{{ ticket.hall_ticket_number }}</td>
+                                    <td>{{ ticket.student.admin.first_name }} {{ ticket.student.admin.last_name }}</td>
+                                    <td>{{ ticket.student.admin.username }}</td>
+                                    <td>{{ ticket.seat_number }}</td>
+                                    <td>{{ ticket.bench_number }}</td>
+                                    <td>
+                                        <a href="#" class="btn btn-sm btn-primary">Print</a>
+                                        <a href="#" class="btn btn-sm btn-info">Download</a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center">No hall tickets found</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

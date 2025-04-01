@@ -9,6 +9,15 @@ from django.shortcuts import (HttpResponseRedirect, get_object_or_404,
                               redirect, render)
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
+from django.template.loader import render_to_string
+from io import BytesIO
+
+# Try importing xhtml2pdf, but don't fail if it's not available
+try:
+    from xhtml2pdf import pisa
+    PDF_GENERATION_AVAILABLE = True
+except ImportError:
+    PDF_GENERATION_AVAILABLE = False
 
 from .forms import *
 from .models import *
@@ -199,12 +208,22 @@ def student_view_notification(request):
 
 def student_view_result(request):
     student = get_object_or_404(Student, admin=request.user)
+    semester = request.GET.get('semester', '')
+    academic_year = request.GET.get('academic_year', '')
+    
     results = StudentResult.objects.filter(student=student)
+    if semester and academic_year:
+        results = results.filter(semester=semester, academic_year=academic_year)
+    
     context = {
+        'student': student,
         'results': results,
-        'page_title': "View Results"
+        'semester': semester,
+        'academic_year': academic_year,
+        'today': datetime.now(),
+        'page_title': 'My Results'
     }
-    return render(request, "student_template/student_view_result.html", context)
+    return render(request, 'student_template/student_view_result.html', context)
 
 
 #library
@@ -216,4 +235,67 @@ def view_books(request):
         'page_title': "Library"
     }
     return render(request, "student_template/view_books.html", context)
+
+
+def view_result(request):
+    student = get_object_or_404(Student, admin=request.user)
+    semester = request.GET.get('semester', '')
+    academic_year = request.GET.get('academic_year', '')
+    
+    results = StudentResult.objects.filter(student=student)
+    if semester and academic_year:
+        results = results.filter(semester=semester, academic_year=academic_year)
+    
+    context = {
+        'student': student,
+        'results': results,
+        'semester': semester,
+        'academic_year': academic_year,
+        'today': datetime.now(),
+        'page_title': 'My Results'
+    }
+    return render(request, 'student_template/student_view_result.html', context)
+
+
+def download_student_result(request):
+    student = get_object_or_404(Student, admin=request.user)
+    semester = request.GET.get('semester', '')
+    academic_year = request.GET.get('academic_year', '')
+    
+    results = StudentResult.objects.filter(student=student)
+    if semester and academic_year:
+        results = results.filter(semester=semester, academic_year=academic_year)
+    
+    context = {
+        'student': student,
+        'results': results,
+        'semester': semester,
+        'academic_year': academic_year,
+        'today': datetime.now(),
+        'page_title': 'My Results'
+    }
+    
+    if not PDF_GENERATION_AVAILABLE:
+        messages.error(request, "PDF generation is not available. Please install xhtml2pdf.")
+        return redirect('student_view_result')
+    
+    try:
+        html_string = render_to_string('student_template/view_result.html', context)
+        
+        # Create a BytesIO object to receive the PDF data
+        buffer = BytesIO()
+        
+        # Create the PDF object, using the BytesIO object as its "file."
+        pisa.pisaDocument(BytesIO(html_string.encode("UTF-8")), buffer)
+        
+        # Get the value of the BytesIO buffer and write it to the response
+        pdf = buffer.getvalue()
+        buffer.close()
+        
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="result_card_{student.admin.username}.pdf"'
+        return response
+    except Exception as e:
+        messages.error(request, f"Error generating PDF: {str(e)}")
+        return redirect('student_view_result')
 

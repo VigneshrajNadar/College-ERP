@@ -15,7 +15,7 @@ class EditResultView(View):
             'form': resultForm,
             'page_title': "Edit Student's Result"
         }
-        return render(request, "staff_template/edit_student_result.html", context)
+        return render(request, "main_app/staff/edit_student_result.html", context)
 
     def post(self, request, *args, **kwargs):
         form = EditResultForm(request.POST)
@@ -24,17 +24,35 @@ class EditResultView(View):
             try:
                 student = form.cleaned_data.get('student')
                 subject = form.cleaned_data.get('subject')
-                test = form.cleaned_data.get('test')
-                exam = form.cleaned_data.get('exam')
-                # Validating
-                result = StudentResult.objects.get(student=student, subject=subject)
-                result.exam = exam
-                result.test = test
-                result.save()
-                messages.success(request, "Result Updated")
+                semester = form.cleaned_data.get('semester')
+                academic_year = form.cleaned_data.get('academic_year')
+                internal_marks = float(form.cleaned_data.get('internal_marks', 0))
+                external_marks = float(form.cleaned_data.get('external_marks', 0))
+                practical_marks = float(form.cleaned_data.get('practical_marks', 0))
+                
+                # Get or create result
+                result, created = StudentResult.objects.get_or_create(
+                    student=student,
+                    subject=subject,
+                    semester=semester,
+                    academic_year=academic_year,
+                    defaults={
+                        'internal_marks': internal_marks,
+                        'external_marks': external_marks,
+                        'practical_marks': practical_marks
+                    }
+                )
+                
+                if not created:
+                    result.internal_marks = internal_marks
+                    result.external_marks = external_marks
+                    result.practical_marks = practical_marks
+                    result.save()
+                
+                messages.success(request, "Result Updated Successfully")
                 return redirect(reverse('edit_student_result'))
             except Exception as e:
-                messages.warning(request, "Result Could Not Be Updated")
+                messages.error(request, f"Error updating result: {str(e)}")
         else:
-            messages.warning(request, "Result Could Not Be Updated")
-        return render(request, "staff_template/edit_student_result.html", context)
+            messages.error(request, "Please correct the errors below")
+        return render(request, "main_app/staff/edit_student_result.html", context)

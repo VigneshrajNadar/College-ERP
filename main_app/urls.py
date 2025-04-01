@@ -22,6 +22,8 @@ from . import hod_views, staff_views, student_views, views
 urlpatterns = [
     path("", views.login_page, name='login_page'),
     path("get_attendance", views.get_attendance, name='get_attendance'),
+    path("get_students", views.get_students, name='get_students'),
+    path("fetch_student_result", staff_views.fetch_student_result, name='fetch_student_result'),
     path("firebase-messaging-sw.js", views.showFirebaseJS, name='showFirebaseJS'),
     path("doLogin/", views.doLogin, name='user_login'),
     path("logout_user/", views.logout_user, name='user_logout'),
@@ -83,41 +85,29 @@ urlpatterns = [
     path("subject/edit/<int:subject_id>",
          hod_views.edit_subject, name='edit_subject'),
 
-
     # Staff
     path("staff/home/", staff_views.staff_home, name='staff_home'),
-    path("staff/apply/leave/", staff_views.staff_apply_leave,
-         name='staff_apply_leave'),
+    path("staff/take-attendance/", staff_views.staff_take_attendance, name='staff_take_attendance'),
+    path("staff/save-attendance/", staff_views.save_attendance, name='save_attendance'),
+    path("staff/update-attendance/", staff_views.staff_update_attendance, name='staff_update_attendance'),
+    path("staff/get-student-attendance/", staff_views.get_student_attendance, name='get_student_attendance'),
+    path("staff/update-attendance-data/", staff_views.update_attendance, name='update_attendance'),
+    path("staff/add-result/", staff_views.staff_add_result, name='staff_add_result'),
+    path("staff/edit-result/", EditResultView.as_view(), name='edit_student_result'),
+    path("staff/generate-result/", staff_views.generate_result, name='staff_generate_result'),
+    path("staff/download-result/<int:subject_id>/<str:semester>/<str:academic_year>/", staff_views.download_result, name='staff_download_result'),
+    path("staff/apply-leave/", staff_views.staff_apply_leave, name='staff_apply_leave'),
     path("staff/feedback/", staff_views.staff_feedback, name='staff_feedback'),
-    path("staff/view/profile/", staff_views.staff_view_profile,
-         name='staff_view_profile'),
-    path("staff/attendance/take/", staff_views.staff_take_attendance,
-         name='staff_take_attendance'),
-    path("staff/attendance/update/", staff_views.staff_update_attendance,
-         name='staff_update_attendance'),
-    path("staff/get_students/", staff_views.get_students, name='get_students'),
-     path("staff/addbook/", staff_views.add_book, name="add_book"),
-    path("staff/issue_book/", staff_views.issue_book, name="issue_book"),
-    path("staff/view_issued_book/", staff_views.view_issued_book, name="view_issued_book"),
-
-
-
-    path("staff/attendance/fetch/", staff_views.get_student_attendance,
-         name='get_student_attendance'),
-    path("staff/attendance/save/",
-         staff_views.save_attendance, name='save_attendance'),
-    path("staff/attendance/update/",
-         staff_views.update_attendance, name='update_attendance'),
+    path("staff/view/profile", staff_views.staff_view_profile, name='staff_view_profile'),
     path("staff/fcmtoken/", staff_views.staff_fcmtoken, name='staff_fcmtoken'),
-    path("staff/view/notification/", staff_views.staff_view_notification,
-         name="staff_view_notification"),
-    path("staff/result/add/", staff_views.staff_add_result, name='staff_add_result'),
-    path("staff/result/edit/", EditResultView.as_view(),
-         name='edit_student_result'),
-    path('staff/result/fetch/', staff_views.fetch_student_result,
-         name='fetch_student_result'),
+    path("staff/view/notification/", staff_views.staff_view_notification, name="staff_view_notification"),
+    path("staff/add-book/", staff_views.add_book, name='staff_add_book'),
+    path("staff/issue-book/", staff_views.issue_book, name='staff_issue_book'),
+    path("staff/view-issued-book/", staff_views.view_issued_book, name='staff_view_issued_book'),
 
-
+    # Chatbot URLs
+    path('chatbot/', views.chatbot_page, name='chatbot_page'),
+    path('chatbot/query/', views.chatbot_query, name='chatbot_query'),
 
     # Student
     path("student/home/", student_views.student_home, name='student_home'),
@@ -138,7 +128,34 @@ urlpatterns = [
 
     path("student/view/notification/", student_views.student_view_notification,
          name="student_view_notification"),
-    path('student/view/result/', student_views.student_view_result,
+    path('student/view-result/', student_views.view_result,
          name='student_view_result'),
+    path("student/download-result/", student_views.download_student_result, name='student_download_result'),
+
+    # Hall Ticket Management URLs
+    path("exam/halls/manage/", views.manage_exam_halls, name='manage_exam_halls'),
+    path("exam/halls/add/", views.add_exam_hall, name='add_exam_hall'),
+    path("exam/manage/", views.manage_exams, name='manage_exams'),
+    path("exam/add/", views.add_exam, name='add_exam'),
+    path("exam/<int:exam_id>/generate-tickets/", views.generate_hall_tickets, name='generate_hall_tickets'),
+    path("exam/<int:exam_id>/view-tickets/", views.view_hall_tickets, name='view_hall_tickets'),
+    path("student/hall-tickets/", views.student_hall_ticket, name='student_hall_ticket'),
+    path("student/apply-kt/", views.student_apply_kt, name='student_apply_kt'),
+    path("student/kt-applications/", views.student_kt_applications, name='student_kt_applications'),
+    path("student/apply-revaluation/", views.student_apply_revaluation, name='student_apply_revaluation'),
+    path("student/revaluation-applications/", views.student_revaluation_applications, name='student_revaluation_applications'),
+    path("student/notifications/", views.student_notifications, name='student_notifications'),
+
+    # Staff KT and Revaluation Management URLs
+    path("staff/manage-kt-applications/", views.staff_manage_kt_applications, name='staff_manage_kt_applications'),
+    path("staff/manage-revaluation-applications/", views.staff_manage_revaluation_applications, name='staff_manage_revaluation_applications'),
+    path("staff/update-kt-status/<int:application_id>/", views.staff_update_kt_status, name='staff_update_kt_status'),
+    path("staff/update-revaluation-status/<int:application_id>/", views.staff_update_revaluation_status, name='staff_update_revaluation_status'),
+
+    # Admin KT and Revaluation Management URLs
+    path("admin/manage-kt-applications/", views.admin_manage_kt_applications, name='admin_manage_kt_applications'),
+    path("admin/manage-revaluation-applications/", views.admin_manage_revaluation_applications, name='admin_manage_revaluation_applications'),
+    path("admin/update-kt-status/<int:application_id>/", views.admin_update_kt_status, name='admin_update_kt_status'),
+    path("admin/update-revaluation-status/<int:application_id>/", views.admin_update_revaluation_status, name='admin_update_revaluation_status'),
 
 ]

@@ -1,0 +1,68 @@
+{% extends 'main_app/base.html' %}
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Manage Exams</h3>
+                    <a href="{% url 'add_exam' %}" class="btn btn-primary float-right">Add New Exam</a>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Course</th>
+                                    <th>Subjects</th>
+                                    <th>Date & Time</th>
+                                    <th>Hall</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for exam in exams %}
+                                <tr>
+                                    <td>{{ exam.name }}</td>
+                                    <td>{{ exam.course.name }}</td>
+                                    <td>
+                                        <ul class="list-unstyled mb-0">
+                                            {% for exam_subject in exam.exam_subjects.all %}
+                                            <li>{{ exam_subject.subject.name }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </td>
+                                    <td>
+                                        {% if exam.date %}
+                                            {{ exam.date|date:"d M Y" }}
+                                            {% if exam.start_time and exam.end_time %}
+                                                <br>
+                                                <small class="text-muted">
+                                                    {{ exam.start_time|time:"H:i" }} - {{ exam.end_time|time:"H:i" }}
+                                                </small>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">Not set</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ exam.hall.name }}</td>
+                                    <td>
+                                        <a href="{% url 'generate_hall_tickets' exam.id %}" class="btn btn-sm btn-success">Generate Tickets</a>
+                                        <a href="{% url 'view_hall_tickets' exam.id %}" class="btn btn-sm btn-info">View Tickets</a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center">No exams found</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
