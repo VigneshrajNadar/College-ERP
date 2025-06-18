@@ -2,9 +2,6 @@
 # exit on error
 set -o errexit
 
-# Upgrade pip
-python3.13 -m pip install --upgrade pip
-
 # Install dependencies
 pip install -r requirements.txt
 
