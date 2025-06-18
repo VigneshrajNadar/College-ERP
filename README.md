@@ -1,211 +1,118 @@
-# College Enterprise Resource Planner
-This is a College Enterprise Resource Planner Developed by me and my project partners for my college.
-We use Python/Django Framwork for building an fully functional web application. v1.1.0
+# College ERP System
 
-For viewing the home page of student or staff you must have required credentials given below
+A comprehensive Enterprise Resource Planning (ERP) system designed for educational institutions to manage various academic and administrative processes.
 
-For Student login -
-Email : `student@student.com`
-Password : `student@erp`
+## Features
 
-For Staff login -
-Email : `staff@staff.com`
-Password : `staff@erp`
+### Student Management
+- Student registration and profile management
+- Course enrollment
+- Attendance tracking
+- Grade management
+- Hall ticket generation
+- Result viewing
+- Revaluation application system
 
-## Features of this Project
+### Staff Management
+- Staff registration and profile management
+- Course allocation
+- Attendance management
+- Result entry and management
+- KT (Keep Term) application processing
+- Revaluation application processing
 
+### HOD (Head of Department) Features
+- Department management
+- Staff oversight
+- Course management
+- Exam management
+- Hall ticket management
+- Result verification
 
-### A. Admin Users Can
-1. See Overall Summary Charts of Students Performances, Staff Performances, Courses, Subjects, Leave, etc.
-2. Manage Staff (Add, Update and Delete)
-3. Manage Students (Add, Update and Delete)
-4. Manage Course (Add, Update and Delete)
-5. Manage Subjects (Add, Update and Delete)
-6. Manage Sessions (Add, Update and Delete)
-7. View Student Attendance
-8. Review and Reply Student/Staff Feedback
-9. Review (Approve/Reject) Student/Staff Leave
+### Admin Features
+- User management
+- Department management
+- Course management
+- System configuration
+- Reports generation
 
-### B. Staff/Teachers Can
-1. See the Overall Summary Charts related to their students, their subjects, leave status, etc.
-2. Take/Update Students Attendance
-3. Add/Update Result
-4. Apply for Leave
-5. Send Feedback to HOD
+## Technology Stack
 
-### C. Students Can
-1. See the Overall Summary Charts related to their attendance, their subjects, leave status, etc.
-2. View Attendance
-3. View Result
-4. Apply for Leave
-5. Send Feedback to HOD
+- **Backend**: Django (Python)
+- **Frontend**: HTML, CSS, JavaScript
+- **Database**: SQLite
+- **UI Framework**: AdminLTE
+- **Authentication**: Django Authentication System
 
+## Installation
 
-## Support Developer
-1. Add a Star 🌟  to this 👆 Repository
-2. Follow on Github & LinkedIn 
-
-
-## How to Install and Run this project?
-
-### Pre-Requisites:
-1. Install Git Version Control
-[ https://git-scm.com/ ]
-
-2. Install Python Latest Version
-[ https://www.python.org/downloads/ ]
-
-3. Install Pip (Package Manager)
-[ https://pip.pypa.io/en/stable/installing/ ]
-
-*Alternative to Pip is Homebrew*
-
-### Installation
-**1. Create a Folder where you want to save the project**
-
-**2. Create a Virtual Environment and Activate**
-
-If you have conda installed in your system
-```
-$  conda env create -f college-erp.yml
+1. Clone the repository:
+```bash
+git clone https://github.com/VigneshrajNadar/College-ERP.git
 ```
 
-Activate created conda environment
-```
-$  conda activate Django-env
-```
-
-Else Install Virtual Environment First
-```
-$  pip install virtualenv
+2. Create and activate virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-Create Virtual Environment
-
-For Windows
-```
-$  python -m venv venv
-```
-For Mac
-```
-$  python3 -m venv venv
-```
-For Linux
-```
-$  virtualenv .
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
-Activate Virtual Environment
-
-For Windows
-```
-$  source venv/scripts/activate
+4. Run migrations:
+```bash
+python manage.py migrate
 ```
 
-For Mac
-```
-$  source venv/bin/activate
-```
-
-For Linux
-```
-$  source bin/activate
+5. Create superuser:
+```bash
+python manage.py createsuperuser
 ```
 
-**3. Clone this project**
-```
-$  git clone https://github.com/Ansarimajid/College-ERP.git
-```
-
-Then, Enter the project
-```
-$  cd College-ERP
+6. Run the development server:
+```bash
+python manage.py runserver
 ```
 
-**4. Install Requirements from 'requirements.txt'**
-```python
-$  pip3 install -r requirements.txt
+## Project Structure
+
+```
+College-ERP/
+├── college_management_system/    # Main project settings
+├── main_app/                     # Main application
+│   ├── templates/               # HTML templates
+│   ├── static/                  # Static files (CSS, JS, images)
+│   ├── models.py               # Database models
+│   ├── views.py                # View logic
+│   └── urls.py                 # URL routing
+├── media/                       # User-uploaded files
+├── static/                      # Static files
+└── requirements.txt            # Project dependencies
 ```
 
-**5. Add the hosts**
+## Usage
 
-- Got to settings.py file 
-- Then, On allowed hosts, Use **[]** as your host. 
-```python
-ALLOWED_HOSTS = []
-```
-*Do not use the fault allowed settings in this repo. It has security risk!*
+1. Access the admin panel at `/admin` to manage the system
+2. Different user roles (Admin, HOD, Staff, Student) have different access levels
+3. Follow the on-screen instructions for specific operations
 
+## Contributing
 
-**6. Now Run Server**
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-Command for PC:
-```python
-$ python manage.py runserver
-```
+## License
 
-Command for Mac:
-```python
-$ python3 manage.py runserver
-```
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-Command for Linux:
-```python
-$ python3 manage.py runserver
-```
+## Contact
 
-**7. Login Credentials**
+Vigneshraj Nadar - [vigneshrajnadar@gmail.com](mailto:vigneshrajnadar@gmail.com)
 
-Create Super User (HOD)
-Command for PC:
-```
-$  python manage.py createsuperuser
-```
-
-Command for Mac:
-```
-$  python3 manage.py createsuperuser
-```
-
-Command for Linux:
-```
-$  python3 manage.py createsuperuser
-```
-
-
-
-## Project's Journey
-- [x] Admin/Staff/Student Login
-- [x] Add and Edit Course
-- [x] Add and Edit Staff
-- [x] Add and Edit Student
-- [x] Add and Edit Subject
-- [x] Upload Staff's Picture
-- [x] Upload Student's Picture
-- [x] Sidebar Active Status
-- [x] Named URLs
-- [x] Model Forms for adding  student
-- [x] Model Forms for all
-- [x] Views Permission (MiddleWareMixin)
-- [x] Attendance and Update Attendance
-- [x] Password Reset Via Email
-- [x] Apply For Leave
-- [x] Students Can Check Attendance
-- [x] Check Email Availability
-- [x] Reply to Leave Applications
-- [x] Reply to Feedback
-- [x] Admin View Attendance
-- [x] Password Change for Admin, Staff and Students using *set_password()*
-- [x] Admin Profile Edit
-- [x] Staff Profile Edit
-- [x] Student Profile Edit
-- [x] Student Dashboard Fixed
-- [x] Passing Page Title From View  - Improved
-- [x] Staff Dashboard Fixed
-- [x] Admin Dashboard Fixed
-- [x] Staff Add Student's Result
-- [x] Staff Edit Result Using CBVs (Class Based Views)
-- [x] Google CAPTCHA
-- [x] Student View Result
-- [x] Change all links to be dynamic
-- [x] Code Restructure - Very Important
+Project Link: [https://github.com/VigneshrajNadar/College-ERP](https://github.com/VigneshrajNadar/College-ERP)
