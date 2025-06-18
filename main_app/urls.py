@@ -22,7 +22,6 @@ from . import hod_views, staff_views, student_views, views
 urlpatterns = [
     path("", views.login_page, name='login_page'),
     path("get_attendance", views.get_attendance, name='get_attendance'),
-    path("get_students", views.get_students, name='get_students'),
     path("fetch_student_result", staff_views.fetch_student_result, name='fetch_student_result'),
     path("firebase-messaging-sw.js", views.showFirebaseJS, name='showFirebaseJS'),
     path("doLogin/", views.doLogin, name='user_login'),
@@ -90,9 +89,12 @@ urlpatterns = [
     path("staff/take-attendance/", staff_views.staff_take_attendance, name='staff_take_attendance'),
     path("staff/save-attendance/", staff_views.save_attendance, name='save_attendance'),
     path("staff/update-attendance/", staff_views.staff_update_attendance, name='staff_update_attendance'),
+    path("staff/get-attendance-dates/", staff_views.get_attendance_dates, name='get_attendance_dates'),
     path("staff/get-student-attendance/", staff_views.get_student_attendance, name='get_student_attendance'),
     path("staff/update-attendance-data/", staff_views.update_attendance, name='update_attendance'),
     path("staff/add-result/", staff_views.staff_add_result, name='staff_add_result'),
+    path("staff/save-result/", staff_views.staff_save_result, name='staff_save_result'),
+    path("staff/get-students/", staff_views.get_students, name='get_students'),
     path("staff/edit-result/", EditResultView.as_view(), name='edit_student_result'),
     path("staff/generate-result/", staff_views.generate_result, name='staff_generate_result'),
     path("staff/download-result/<int:subject_id>/<str:semester>/<str:academic_year>/", staff_views.download_result, name='staff_download_result'),
@@ -145,6 +147,7 @@ urlpatterns = [
     path("student/apply-revaluation/", views.student_apply_revaluation, name='student_apply_revaluation'),
     path("student/revaluation-applications/", views.student_revaluation_applications, name='student_revaluation_applications'),
     path("student/notifications/", views.student_notifications, name='student_notifications'),
+    path('student/hall-ticket/download/<int:ticket_id>/', views.download_hall_ticket, name='download_hall_ticket'),
 
     # Staff KT and Revaluation Management URLs
     path("staff/manage-kt-applications/", views.staff_manage_kt_applications, name='staff_manage_kt_applications'),
@@ -157,5 +160,12 @@ urlpatterns = [
     path("admin/manage-revaluation-applications/", views.admin_manage_revaluation_applications, name='admin_manage_revaluation_applications'),
     path("admin/update-kt-status/<int:application_id>/", views.admin_update_kt_status, name='admin_update_kt_status'),
     path("admin/update-revaluation-status/<int:application_id>/", views.admin_update_revaluation_status, name='admin_update_revaluation_status'),
+
+    # Hall Ticket URLs
+    path('generate-hall-tickets/<int:exam_id>/', views.generate_hall_tickets, name='generate_hall_tickets'),
+    path('view-hall-tickets/<int:exam_id>/', views.view_hall_tickets, name='view_hall_tickets'),
+    path('download-hall-ticket/<int:ticket_id>/', views.download_hall_ticket, name='download_hall_ticket'),
+    path('delete-hall-ticket/<int:ticket_id>/', views.delete_hall_ticket, name='delete_hall_ticket'),
+    path('delete-exam/<int:exam_id>/', views.delete_exam, name='delete_exam'),
 
 ]

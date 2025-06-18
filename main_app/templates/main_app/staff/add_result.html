@@ -49,6 +49,10 @@
                                         <option value="2">Semester 2</option>
                                         <option value="3">Semester 3</option>
                                         <option value="4">Semester 4</option>
+                                        <option value="5">Semester 5</option>
+                                        <option value="6">Semester 6</option>
+                                        <option value="7">Semester 7</option>
+                                        <option value="8">Semester 8</option>
                                     </select>
                                 </div>
 
@@ -99,7 +103,10 @@
     $(document).ready(function() {
         $('#subject').change(function() {
             var subjectId = $(this).val();
+            console.log('Subject changed:', subjectId);  // Debug log
+            
             if (subjectId) {
+                console.log('Making AJAX request for subject:', subjectId);  // Debug log
                 $.ajax({
                     url: '{% url "get_students" %}',
                     type: 'POST',
@@ -108,19 +115,33 @@
                         csrfmiddlewaretoken: '{{ csrf_token }}'
                     },
                     success: function(response) {
-                        var students = JSON.parse(response);
+                        console.log('Received response:', response);  // Debug log
                         var studentSelect = $('#student');
                         studentSelect.empty();
                         studentSelect.append('<option value="">Select Student</option>');
-                        students.forEach(function(student) {
-                            studentSelect.append(
-                                $('<option></option>').val(student.id).text(student.name)
-                            );
-                        });
+                        
+                        if (response && response.length > 0) {
+                            console.log('Found students:', response.length);  // Debug log
+                            response.forEach(function(student) {
+                                console.log('Adding student:', student.name);  // Debug log
+                                var option = $('<option></option>')
+                                    .val(student.id)
+                                    .text(student.name)
+                                    .data('roll-number', student.roll_number);
+                                studentSelect.append(option);
+                            });
+                        } else {
+                            console.log('No students found');  // Debug log
+                            studentSelect.append('<option value="">No students found</option>');
+                        }
                     },
                     error: function(xhr, status, error) {
                         console.error('Error fetching students:', error);
+                        console.error('Status:', status);
+                        console.error('Response:', xhr.responseText);
+                        console.error('XHR:', xhr);  // Debug log
                         alert('Error fetching students. Please try again.');
+                        $('#student').empty().append('<option value="">Error loading students</option>');
                     }
                 });
             } else {

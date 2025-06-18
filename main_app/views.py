@@ -15,6 +15,13 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 import re
+from django.template.loader import render_to_string
+from weasyprint import HTML
+import tempfile
+from io import BytesIO
+from xhtml2pdf import pisa
+import os
+import imghdr
 
 def is_staff(user):
     return user.user_type == '2'
@@ -23,7 +30,7 @@ def is_admin(user):
     return user.user_type == '1'
 
 from .EmailBackend import EmailBackend
-from .models import Attendance, Session, Subject, ExamHall, Exam, HallTicket, Course, ExamSubject, KTApplication, RevaluationApplication, Notification, StudentResult, Student, ChatBot
+from .models import Attendance, Session, Subject, ExamHall, Exam, HallTicket, Course, ExamSubject, KTApplication, RevaluationApplication, Notification, StudentResult, Student, ChatBot, AttendanceReport
 from .utils import generate_hall_tickets_for_exam
 
 # Create your views here.
@@ -47,9 +54,9 @@ def doLogin(request, **kwargs):
         #Google recaptcha
         captcha_token = request.POST.get('g-recaptcha-response')
         captcha_url = "https://www.google.com/recaptcha/api/siteverify"
-        captcha_key = "6LfTGD4qAAAAALtlli02bIM2MGi_V0cUYrmzGEGd"
+        captcha_secret_key = "6LdPjAcrAAAAAKmpkdDHmIwqYH2UOvPTWgSt2hnc"
         data = {
-            'secret': captcha_key,
+            'secret': captcha_secret_key,
             'response': captcha_token
         }
         # Make request
@@ -92,18 +99,33 @@ def get_attendance(request):
     try:
         subject = get_object_or_404(Subject, id=subject_id)
         session = get_object_or_404(Session, id=session_id)
-        attendance = Attendance.objects.filter(subject=subject, session=session)
+        
+        # Get attendance records for this subject and session
+        attendance_records = Attendance.objects.filter(
+            subject=subject,
+            session=session
+        ).order_by('-date')  # Most recent first
+        
         attendance_list = []
-        for attd in attendance:
+        for attendance in attendance_records:
             data = {
-                    "id": attd.id,
-                    "attendance_date": str(attd.date),
-                    "session": attd.session.id
+                "id": attendance.id,
+                "attendance_date": attendance.date.strftime('%Y-%m-%d'),  # Format date as YYYY-MM-DD
+                "subject": attendance.subject.name,
+                "session": str(attendance.session)
                     }
             attendance_list.append(data)
-        return JsonResponse(json.dumps(attendance_list), safe=False)
+        
+        return JsonResponse(attendance_list, safe=False)
+    except Subject.DoesNotExist:
+        print(f"Subject with ID {subject_id} not found")
+        return JsonResponse({'error': 'Subject not found'}, status=404)
+    except Session.DoesNotExist:
+        print(f"Session with ID {session_id} not found")
+        return JsonResponse({'error': 'Session not found'}, status=404)
     except Exception as e:
-        return None
+        print(f"Error in get_attendance: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 def showFirebaseJS(request):
@@ -258,25 +280,33 @@ def view_hall_tickets(request, exam_id):
     if request.user.user_type != '1':  # Only HOD can access
         return redirect('login_page')
     
-    exam = get_object_or_404(Exam, id=exam_id)
-    tickets = HallTicket.objects.filter(exam=exam)
-    context = {
-        'exam': exam,
-        'tickets': tickets
-    }
-    return render(request, 'main_app/hod/view_hall_tickets.html', context)
+    try:
+        exam = get_object_or_404(Exam, id=exam_id)
+        tickets = HallTicket.objects.filter(exam=exam)
+        context = {
+            'exam': exam,
+            'tickets': tickets
+        }
+        return render(request, 'main_app/hod/view_hall_tickets.html', context)
+    except Exception as e:
+        messages.error(request, f"Error loading hall tickets: {str(e)}")
+        return redirect('manage_exams')
 
 def student_hall_ticket(request):
     """View for students to view their hall ticket"""
     if request.user.user_type != '3':  # Only students can access
         return redirect('login_page')
     
-    student = request.user.student
-    tickets = HallTicket.objects.filter(student=student)
-    context = {
-        'tickets': tickets
-    }
-    return render(request, 'main_app/student/hall_ticket.html', context)
+    try:
+        student = request.user.student
+        tickets = HallTicket.objects.filter(student=student)
+        context = {
+            'tickets': tickets
+        }
+        return render(request, 'main_app/student/hall_ticket.html', context)
+    except Exception as e:
+        messages.error(request, f"Error loading hall tickets: {str(e)}")
+        return redirect('student_home')
 
 @login_required(login_url='login')
 def student_apply_kt(request):
@@ -345,14 +375,14 @@ def student_apply_revaluation(request):
     # Get all subjects for the student's course
     subjects = Subject.objects.filter(course=student.course_id)
     
-    # Get subjects eligible for revaluation (where grade is 'D')
+    # Get all subjects that have results
     revaluation_subjects = []
     for subject in subjects:
         result = StudentResult.objects.filter(
             student=student,
             subject=subject
         ).first()
-        if result and result.grade == 'D':
+        if result:
             revaluation_subjects.append(subject)
     
     # Get existing revaluation applications
@@ -374,7 +404,8 @@ def student_apply_revaluation(request):
         RevaluationApplication.objects.create(
             student=student,
             subject=subject,
-            current_marks=result.total_marks,
+            semester=result.semester,
+            current_marks=result.internal_marks + result.external_marks + result.practical_marks,
             status='pending'
         )
         messages.success(request, f"Successfully applied for revaluation in {subject.name}")
@@ -432,7 +463,7 @@ def staff_update_kt_status(request, application_id):
         
         # Create notification for student
         Notification.objects.create(
-            user=application.student.user,
+            user=application.student.admin,
             title='KT Application Update',
             message=f'Your KT application for {application.subject.name} has been {status}. Remarks: {remarks}',
             notification_type='kt'
@@ -453,15 +484,64 @@ def staff_update_revaluation_status(request, application_id):
         application.remarks = remarks
         application.save()
         
-        # Create notification for student
-        Notification.objects.create(
-            user=application.student.user,
-            title='Revaluation Application Update',
-            message=f'Your revaluation application for {application.subject.name} has been {status}. Remarks: {remarks}',
-            notification_type='revaluation'
-        )
+        if status == 'approved':
+            try:
+                # Get the marks from the form
+                internal_marks = float(request.POST.get('internal_marks', 0))
+                external_marks = float(request.POST.get('external_marks', 0))
+                practical_marks = float(request.POST.get('practical_marks', 0))
+                
+                # Update the result
+                result = StudentResult.objects.get(
+                    student=application.student,
+                    subject=application.subject,
+                    semester=application.semester
+                )
+                
+                result.internal_marks = internal_marks
+                result.external_marks = external_marks
+                result.practical_marks = practical_marks
+                result.total_marks = internal_marks + external_marks + practical_marks
+                
+                # Calculate grade based on total marks
+                total = result.total_marks
+                if total >= 90:
+                    result.grade = 'A+'
+                elif total >= 80:
+                    result.grade = 'A'
+                elif total >= 70:
+                    result.grade = 'B+'
+                elif total >= 60:
+                    result.grade = 'B'
+                elif total >= 50:
+                    result.grade = 'C'
+                else:
+                    result.grade = 'F'
+                
+                result.save()
+
+                # Create notification for student
+                Notification.objects.create(
+                    user=application.student.admin,
+                    title='Revaluation Result Update',
+                    message=f'Your revaluation application for {application.subject.name} has been {status}. New total marks: {result.total_marks}. Grade: {result.grade}. Remarks: {remarks}',
+                    notification_type='revaluation'
+                )
+            except Exception as e:
+                messages.error(request, f'Error updating marks: {str(e)}')
+                return redirect('staff_manage_revaluation_applications')
+        else:
+            # Create notification for rejected status
+            Notification.objects.create(
+                user=application.student.admin,
+                title='Revaluation Application Update',
+                message=f'Your revaluation application for {application.subject.name} has been {status}. Remarks: {remarks}',
+                notification_type='revaluation'
+            )
         
         messages.success(request, 'Revaluation application status updated successfully.')
+        return redirect('staff_manage_revaluation_applications')
+    
     return redirect('staff_manage_revaluation_applications')
 
 # Admin views for KT and Revaluation management
@@ -495,7 +575,7 @@ def admin_update_kt_status(request, application_id):
         
         # Create notification for student
         Notification.objects.create(
-            user=application.student.user,
+            user=application.student.admin,
             title='KT Application Update',
             message=f'Your KT application for {application.subject.name} has been {status}. Remarks: {remarks}',
             notification_type='kt'
@@ -518,7 +598,7 @@ def admin_update_revaluation_status(request, application_id):
         
         # Create notification for student
         Notification.objects.create(
-            user=application.student.user,
+            user=application.student.admin,
             title='Revaluation Application Update',
             message=f'Your revaluation application for {application.subject.name} has been {status}. Remarks: {remarks}',
             notification_type='revaluation'
@@ -544,30 +624,142 @@ def student_notifications(request):
 
 @csrf_exempt
 def get_students(request):
+    print("[DEBUG] get_students view called")
+    
     if request.method != 'POST':
+        print("[DEBUG] Invalid request method")
         return JsonResponse({'error': 'Invalid request method'}, status=400)
     
-    subject_id = request.POST.get('subject')
-    if not subject_id:
-        return JsonResponse({'error': 'Subject ID is required'}, status=400)
-    
     try:
-        subject = Subject.objects.get(id=subject_id)
-        # Get students enrolled in the course of the subject
-        students = Student.objects.filter(course=subject.course)
+        subject_id = request.POST.get('subject')
+        print(f"[DEBUG] Received subject_id: {subject_id}")
+        
+        if not subject_id:
+            print("[DEBUG] No subject_id provided")
+            return JsonResponse({'error': 'Subject ID is required'}, status=400)
+        
+        # Get the subject and its associated course
+        subject = Subject.objects.select_related('course', 'staff').get(id=subject_id)
+        print(f"[DEBUG] Found subject: {subject.name}, Course: {subject.course.name}")
+        
+        # Get all students in this course
+        students = Student.objects.filter(
+            course_id=subject.course_id
+        ).select_related('admin')
+        print(f"[DEBUG] Found {students.count()} students in course")
         
         student_list = []
         for student in students:
-            student_list.append({
-                'id': student.id,
-                'name': f"{student.admin.first_name} {student.admin.last_name} ({student.admin.username})"
-            })
+            try:
+                first_name = student.admin.first_name or ''
+                last_name = student.admin.last_name or ''
+                name = f"{first_name} {last_name}".strip()
+                if not name:
+                    name = student.admin.username
+                
+                student_data = {
+                    'id': student.id,
+                    'name': name,
+                    'roll_number': student.admin.username
+                }
+                student_list.append(student_data)
+                print(f"[DEBUG] Added student: {name} ({student.admin.username})")
+            except Exception as e:
+                print(f"[DEBUG] Error processing student {student.id}: {str(e)}")
+                continue
         
-        return JsonResponse(json.dumps(student_list), safe=False)
+        print(f"[DEBUG] Returning {len(student_list)} students")
+        return JsonResponse(student_list, safe=False)
+        
     except Subject.DoesNotExist:
+        print(f"[DEBUG] Subject with ID {subject_id} not found")
         return JsonResponse({'error': 'Subject not found'}, status=404)
     except Exception as e:
+        print(f"[DEBUG] Error in get_students: {str(e)}")
         return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def save_result(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
+    
+    try:
+        subject_id = request.POST.get('subject')
+        student_id = request.POST.get('student')
+        test_score = request.POST.get('test_score')
+        exam_score = request.POST.get('exam_score')
+        
+        # Validate required fields
+        if not all([subject_id, student_id, test_score, exam_score]):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'All fields are required'
+            }, status=400)
+            
+        # Convert scores to float and validate range
+        try:
+            test_score = float(test_score)
+            exam_score = float(exam_score)
+            if not (0 <= test_score <= 100 and 0 <= exam_score <= 100):
+                raise ValueError("Scores must be between 0 and 100")
+        except ValueError as e:
+            return JsonResponse({
+                'status': 'error',
+                'message': str(e)
+            }, status=400)
+            
+        # Get or create student result
+        student_result, created = StudentResult.objects.get_or_create(
+            student_id=student_id,
+            subject_id=subject_id,
+            defaults={
+                'test_score': test_score,
+                'exam_score': exam_score
+            }
+        )
+        
+        if not created:
+            # Update existing result
+            student_result.test_score = test_score
+            student_result.exam_score = exam_score
+            student_result.save()
+            
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Result saved successfully'
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Error saving result: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Error saving result: {str(e)}'
+        }, status=500)
+
+@login_required
+def add_result(request):
+    if request.user.user_type != '2':  # Only staff can access
+        return redirect('login_page')
+        
+    try:
+        staff = request.user.staff
+        # Get subjects taught by this staff member
+        subjects = Subject.objects.filter(staff=staff).select_related('course')
+        print(f"[DEBUG] Found {subjects.count()} subjects for staff")
+        
+        if not PDF_GENERATION_AVAILABLE:
+            messages.error(request, "PDF generation is not available. Please install xhtml2pdf package.")
+            return redirect('staff_home')
+        
+        context = {
+            'page_title': 'Add Student Result',
+            'subjects': subjects
+        }
+        return render(request, 'staff_template/add_result.html', context)
+    except Exception as e:
+        print(f"[DEBUG] Error in add_result: {str(e)}")
+        messages.error(request, f"Error loading page: {str(e)}")
+        return redirect('staff_home')
 
 def chatbot_page(request):
     return render(request, 'main_app/chatbot.html')
@@ -778,3 +970,262 @@ def chatbot_query(request):
         'message': 'Invalid request method'
     }, status=400)
 
+def download_hall_ticket(request, ticket_id):
+    try:
+        ticket = HallTicket.objects.get(id=ticket_id)
+        
+        # Check if user is HOD or Staff
+        if request.user.user_type in ['1', '2']:
+            # HOD and Staff can download any hall ticket
+            pass
+        # Check if user is a student
+        elif request.user.user_type == '3':
+            try:
+                student = request.user.student
+                if ticket.student != student:
+                    messages.error(request, "You don't have permission to download this hall ticket")
+                    return redirect('student_hall_ticket')
+            except Student.DoesNotExist:
+                messages.error(request, "Student profile not found")
+                return redirect('student_home')
+        else:
+            messages.error(request, "You don't have permission to download hall tickets")
+            return redirect('login_page')
+        
+        # Render the hall ticket template
+        context = {
+            'ticket': ticket
+        }
+        
+        html_string = render_to_string('main_app/student/hall_ticket_pdf.html', context)
+        
+        # Create PDF
+        html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            html.write_pdf(tmp.name)
+            
+            # Read the PDF file
+            with open(tmp.name, 'rb') as pdf_file:
+                response = HttpResponse(pdf_file.read(), content_type='application/pdf')
+                response['Content-Disposition'] = f'attachment; filename=hall_ticket_{ticket.hall_ticket_number}.pdf'
+                return response
+    except Exception as e:
+        print(f"[DEBUG] Error generating hall ticket PDF: {str(e)}")
+        messages.error(request, f"Error generating hall ticket: {str(e)}")
+        return redirect('student_hall_ticket')
+
+def delete_hall_ticket(request, ticket_id):
+    """View for deleting a hall ticket"""
+    if request.user.user_type != '1':  # Only HOD can delete
+        messages.error(request, "You don't have permission to delete hall tickets")
+        return redirect('login_page')
+    
+    try:
+        ticket = get_object_or_404(HallTicket, id=ticket_id)
+        exam_id = ticket.exam.id  # Store exam_id before deletion
+        ticket.delete()
+        messages.success(request, "Hall ticket deleted successfully")
+        return redirect('view_hall_tickets', exam_id=exam_id)
+    except Exception as e:
+        messages.error(request, f"Error deleting hall ticket: {str(e)}")
+        return redirect('manage_exams')
+
+def delete_exam(request, exam_id):
+    """View for deleting an exam"""
+    if request.user.user_type != '1':  # Only HOD can delete
+        messages.error(request, "You don't have permission to delete exams")
+        return redirect('login_page')
+    
+    try:
+        exam = get_object_or_404(Exam, id=exam_id)
+        
+        # Delete all associated hall tickets first
+        HallTicket.objects.filter(exam=exam).delete()
+        
+        # Delete all exam subjects
+        ExamSubject.objects.filter(exam=exam).delete()
+        
+        # Finally delete the exam
+        exam.delete()
+        
+        messages.success(request, "Exam and all associated data deleted successfully")
+        return redirect('manage_exams')
+    except Exception as e:
+        messages.error(request, f"Error deleting exam: {str(e)}")
+        return redirect('manage_exams')
+
+def staff_result(request):
+    """View for staff to view and manage results"""
+    if request.user.user_type != '2':  # Only staff can access
+        return redirect('login_page')
+    
+    try:
+        staff = request.user.staff
+        subjects = Subject.objects.filter(staff=staff)
+        semesters = ['1', '2', '3', '4', '5', '6', '7', '8']  # All 8 semesters
+        academic_years = ['2023-24', '2024-25']  # Add more years as needed
+        
+        context = {
+            'subjects': subjects,
+            'semesters': semesters,
+            'academic_years': academic_years
+        }
+        return render(request, 'main_app/staff/result.html', context)
+    except Exception as e:
+        messages.error(request, f"Error loading results: {str(e)}")
+        return redirect('staff_home')
+
+def student_view_result(request):
+    """View for students to view their results"""
+    if request.user.user_type != '3':  # Only students can access
+        return redirect('login_page')
+    
+    try:
+        student = request.user.student
+        semesters = ['1', '2', '3', '4', '5', '6', '7', '8']  # Added semester 8
+        academic_years = ['2023-24', '2024-25']  # Add more years as needed
+        
+        context = {
+            'student': student,
+            'semesters': semesters,
+            'academic_years': academic_years
+        }
+        return render(request, 'main_app/student/view_result.html', context)
+    except Exception as e:
+        messages.error(request, f"Error loading results: {str(e)}")
+        return redirect('student_home')
+
+def student_download_result(request):
+    """View for students to download their results"""
+    if request.user.user_type != '3':  # Only students can access
+        return redirect('login_page')
+    
+    try:
+        student = request.user.student
+        semester = request.GET.get('semester', '')
+        academic_year = request.GET.get('academic_year', '')
+        
+        results = StudentResult.objects.filter(student=student)
+        if semester and academic_year:
+            results = results.filter(semester=semester, academic_year=academic_year)
+        
+        context = {
+            'student': student,
+            'results': results,
+            'semester': semester,
+            'academic_year': academic_year,
+            'today': datetime.now()
+        }
+        
+        if not PDF_GENERATION_AVAILABLE:
+            messages.error(request, "PDF generation is not available. Please install xhtml2pdf package.")
+            return redirect('student_view_result')
+        
+        html_string = render_to_string('main_app/student/result_pdf.html', context)
+        
+        # Create PDF
+        buffer = BytesIO()
+        pisa.pisaDocument(BytesIO(html_string.encode("UTF-8")), buffer)
+        
+        # Get the value of the BytesIO buffer and write it to the response
+        pdf = buffer.getvalue()
+        buffer.close()
+        
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="result_card_{student.admin.username}.pdf"'
+        return response
+    except Exception as e:
+        messages.error(request, f"Error generating PDF: {str(e)}")
+        return redirect('student_view_result')
+
+@csrf_exempt
+def get_student_attendance(request):
+    attendance_date_id = request.POST.get('attendance_date_id')
+    print(f"[DEBUG] get_student_attendance called with attendance_date_id: {attendance_date_id}")
+
+    try:
+        # Get attendance record
+        attendance = Attendance.objects.get(id=attendance_date_id)
+        print(f"[DEBUG] Found attendance for subject: {attendance.subject.name}")
+
+        # Get students for this subject's course
+        students = Student.objects.filter(
+            course_id=attendance.subject.course_id
+        ).select_related('admin')
+        print(f"[DEBUG] Found {students.count()} students")
+
+        # Get attendance reports
+        attendance_reports = AttendanceReport.objects.filter(
+            attendance=attendance
+        ).values_list('student_id', 'status')
+        attendance_dict = dict(attendance_reports)
+        print(f"[DEBUG] Found {len(attendance_dict)} attendance records")
+
+        student_list = []
+        for student in students:
+            try:
+                name = f"{student.admin.first_name} {student.admin.last_name}".strip()
+                if not name:
+                    name = student.admin.username
+
+                student_list.append({
+                    'id': student.id,
+                    'name': name,
+                    'roll_number': student.admin.username,
+                    'status': attendance_dict.get(student.id, False)
+                })
+                print(f"[DEBUG] Added student: {name}")
+            except Exception as e:
+                print(f"[DEBUG] Error processing student {student.id}: {str(e)}")
+                continue
+
+        print(f"[DEBUG] Returning {len(student_list)} students")
+        return JsonResponse(student_list, safe=False)
+
+    except Exception as e:
+        print(f"[DEBUG] Error in get_student_attendance: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def update_attendance(request):
+    try:
+        student_data = request.POST.get('student_ids')
+        date = request.POST.get('date')
+        
+        if not student_data or not date:
+            return JsonResponse({'error': 'Missing required data'}, status=400)
+            
+        students = json.loads(student_data)
+        attendance = get_object_or_404(Attendance, id=date)
+        
+        for student_dict in students:
+            student = get_object_or_404(Student, id=student_dict.get('id'))
+            attendance_report = AttendanceReport.objects.filter(
+                student=student, 
+                attendance=attendance
+            ).first()
+            
+            if attendance_report:
+                attendance_report.status = student_dict.get('status')
+                attendance_report.save()
+            else:
+                # Create new attendance report if it doesn't exist
+                AttendanceReport.objects.create(
+                    student=student,
+                    attendance=attendance,
+                    status=student_dict.get('status')
+                )
+                
+        return HttpResponse("OK")
+    except json.JSONDecodeError:
+        print("Error: Invalid JSON data received")
+        return JsonResponse({'error': 'Invalid data format'}, status=400)
+    except Student.DoesNotExist:
+        print("Error: Student not found")
+        return JsonResponse({'error': 'Student not found'}, status=404)
+    except Attendance.DoesNotExist:
+        print("Error: Attendance record not found")
+        return JsonResponse({'error': 'Attendance record not found'}, status=404)
+    except Exception as e:
+        print(f"Error in update_attendance: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)

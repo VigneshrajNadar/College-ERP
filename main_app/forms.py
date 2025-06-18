@@ -59,11 +59,23 @@ class CustomUserForm(FormSettings):
 class StudentForm(CustomUserForm):
     def __init__(self, *args, **kwargs):
         super(StudentForm, self).__init__(*args, **kwargs)
+        # Add any custom initialization here if needed
+        if 'instance' in kwargs:
+            try:
+                student = kwargs['instance']
+                self.fields['course'].initial = student.course
+                self.fields['session'].initial = student.session
+            except Exception as e:
+                pass
 
     class Meta(CustomUserForm.Meta):
         model = Student
-        fields = CustomUserForm.Meta.fields + \
-            ['course', 'session']
+        fields = CustomUserForm.Meta.fields + ['course', 'session', 'gender']
+        widgets = {
+            'course': forms.Select(attrs={'class': 'form-control'}),
+            'session': forms.Select(attrs={'class': 'form-control'}),
+            'gender': forms.Select(attrs={'class': 'form-control'})
+        }
 
 
 class AdminForm(CustomUserForm):

@@ -570,9 +570,16 @@ def get_admin_attendance(request):
                 "name": str(report.student)
             }
             json_data.append(data)
-        return JsonResponse(json.dumps(json_data), safe=False)
+        return JsonResponse(json_data, safe=False)
+    except Subject.DoesNotExist:
+        return JsonResponse({'error': 'Subject not found'}, status=404)
+    except Session.DoesNotExist:
+        return JsonResponse({'error': 'Session not found'}, status=404)
+    except Attendance.DoesNotExist:
+        return JsonResponse({'error': 'Attendance record not found'}, status=404)
     except Exception as e:
-        return None
+        print(f"[DEBUG] Error in get_admin_attendance: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 def admin_view_profile(request):
@@ -709,8 +716,19 @@ def delete_course(request, course_id):
 
 def delete_subject(request, subject_id):
     subject = get_object_or_404(Subject, id=subject_id)
-    subject.delete()
-    messages.success(request, "Subject deleted successfully!")
+    try:
+        # Delete related records first
+        Attendance.objects.filter(subject=subject).delete()
+        StudentResult.objects.filter(subject=subject).delete()
+        ExamSubject.objects.filter(subject=subject).delete()
+        KTApplication.objects.filter(subject=subject).delete()
+        RevaluationApplication.objects.filter(subject=subject).delete()
+        
+        # Now delete the subject
+        subject.delete()
+        messages.success(request, "Subject and all related records deleted successfully!")
+    except Exception as e:
+        messages.error(request, f"Error deleting subject: {str(e)}")
     return redirect(reverse('manage_subject'))
 
 

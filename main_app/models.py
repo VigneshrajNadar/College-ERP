@@ -5,9 +5,10 @@ from django.db.models.signals import post_save
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from datetime import datetime,timedelta
+from django.utils import timezone
 
-
-
+# Common choices
+GENDER_CHOICES = [("M", "Male"), ("F", "Female")]
 
 class CustomUserManager(UserManager):
     def _create_user(self, email, password, **extra_fields):
@@ -41,13 +42,11 @@ class Session(models.Model):
 
 class CustomUser(AbstractUser):
     USER_TYPE = ((1, "HOD"), (2, "Staff"), (3, "Student"))
-    GENDER = [("M", "Male"), ("F", "Female")]
-    
     
     username = None  # Removed username, using email instead
     email = models.EmailField(unique=True)
     user_type = models.CharField(default=1, choices=USER_TYPE, max_length=1)
-    gender = models.CharField(max_length=1, choices=GENDER)
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
     profile_pic = models.ImageField()
     address = models.TextField()
     fcm_token = models.TextField(default="")  # For firebase notifications
@@ -58,12 +57,11 @@ class CustomUser(AbstractUser):
     objects = CustomUserManager()
 
     def __str__(self):
-        return  self.first_name + " " + self.last_name
+        return self.first_name + " " + self.last_name
 
 
 class Admin(models.Model):
     admin = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
-
 
 
 class Course(models.Model):
@@ -88,6 +86,10 @@ class Student(models.Model):
     admin = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
     course = models.ForeignKey(Course, on_delete=models.DO_NOTHING, null=True, blank=False)
     session = models.ForeignKey(Session, on_delete=models.DO_NOTHING, null=True)
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES, null=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    fcm_token = models.TextField(default="")
 
     def __str__(self):
         return self.admin.last_name + ", " + self.admin.first_name
@@ -194,16 +196,21 @@ class NotificationStudent(models.Model):
 class StudentResult(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    semester = models.CharField(max_length=10)
+    academic_year = models.CharField(max_length=20)
     internal_marks = models.FloatField(default=0)
     external_marks = models.FloatField(default=0)
     practical_marks = models.FloatField(default=0)
-    semester = models.CharField(max_length=10, default='')
-    academic_year = models.CharField(max_length=10, default='')
+    total_marks = models.FloatField(default=0)
+    grade = models.CharField(max_length=2, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        unique_together = ['student', 'subject', 'semester', 'academic_year']
+
     def __str__(self):
-        return f"{self.student.admin.first_name} {self.student.admin.last_name} - {self.subject.name}"
+        return f"{self.student} - {self.subject} - {self.semester} - {self.academic_year}"
 
 
 class ExamHall(models.Model):

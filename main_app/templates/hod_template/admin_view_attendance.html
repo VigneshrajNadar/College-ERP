@@ -119,16 +119,19 @@
                     subject:subject,
                     session:session
                 }
-            
-            }
-
-            ).done(function(response){
-                var json_data = JSON.parse(response)
-                if (json_data.length > 0){
-
+            }).done(function(response){
+                if (response.error) {
+                    $("#error_attendance").html(response.error)
+                    $("#error_attendance").show()
+                    $("#attendance_block").hide()
+                    $("#student_data").html("")
+                    return
+                }
+                
+                if (response.length > 0){
                     var html = "";
-                    for (key in json_data){
-                        html += "<option value='"+json_data[key]['id']+"'>"+json_data[key]['attendance_date']+"</option>"
+                    for (key in response){
+                        html += "<option value='"+response[key]['id']+"'>"+response[key]['attendance_date']+"</option>"
                     }
                     $("#attendance_date").html(html)
                     $("#error_attendance").hide()
@@ -141,17 +144,12 @@
                     $("#attendance_date").html("")
                     $("#attendance_block").hide()
                     $("#student_data").html("")
-
-
                 }
             }).fail(function(response){
-                alert("Error While Fetching Data")
-                $("#error_attendance").html("")
+                $("#error_attendance").html("Error While Fetching Data")
                 $("#error_attendance").show()
                 $("#attendance_block").hide()
                 $("#student_data").html("")
-
-
             })
         })
 
@@ -160,12 +158,12 @@
             var session = $("#session").val()
             var subject = $("#subject").val()
             $("#student_data").html(null)
-if (attendance_date.length  == 0){
-    alert("Please Choose A Date");
-    $("#save_attendance").hide()
-
-    return false;
-}
+            
+            if (attendance_date.length == 0){
+                alert("Please Choose A Date");
+                return false;
+            }
+            
             $.ajax({
                 url: "{% url 'get_admin_attendance' %}",
                 type: 'POST',
@@ -175,32 +173,31 @@ if (attendance_date.length  == 0){
                     subject:subject
                 }
             }).done(function (response) {
-                var json_data = JSON.parse(response)
-                if (json_data.length < 1) {
-                    alert("No data to display")
-
-                } else {
-
-                    var div_data = "<hr/><div class='form-group'></div><div class='form-group'> <label>Student Attendance</label><div class='row'>"
-
-                    for (key in json_data) {
-                            if (json_data[key]['status'] == 'True'){
-                                div_data += "<div class='col-lg-3 attendance_div_green'><b>"+ json_data[key]['name'] + "</b><br/>Present</div>" 
-                            }else{
-        
-                                div_data += "<div class='col-lg-3 attendance_div_red'><b>"+ json_data[key]['name'] + "</b><br/>Absent</div>"
-                            }
-                        }
-                       // div_data += "<div class='col-lg-3'><div class='form-check custom-control custom-checkbox'><input type='checkbox' class='custom-control-input' " + (json_data[key]['status'] ? "checked='checked'" : "")+" name='student_data[]' value=" + json_data[key]['id'] + " id='checkbox" + json_data[key]['id'] + "' /> <label for='checkbox" + json_data[key]['id'] + "' class='custom-control-label'>" + json_data[key]['name']  + (json_data[key]['status'] ? " [Present] " : " [Absent] ")+"</label></div> </div>"
-                    div_data += "</div></div>"
-                    $("#student_data").html(div_data)
+                if (response.error) {
+                    alert(response.error);
+                    return;
                 }
+                
+                if (response.length < 1) {
+                    alert("No data to display")
+                    return;
+                }
+
+                var div_data = "<hr/><div class='form-group'></div><div class='form-group'> <label>Student Attendance</label><div class='row'>"
+
+                for (key in response) {
+                    if (response[key]['status'] == 'True'){
+                        div_data += "<div class='col-lg-3 attendance_div_green'><b>"+ response[key]['name'] + "</b><br/>Present</div>" 
+                    }else{
+                        div_data += "<div class='col-lg-3 attendance_div_red'><b>"+ response[key]['name'] + "</b><br/>Absent</div>"
+                    }
+                }
+                div_data += "</div></div>"
+                $("#student_data").html(div_data)
             }).fail(function (response) {
                 alert("Error in fetching students")
             })
-
         })
-       
     })
 </script>
 {% endblock custom_js %}

@@ -6,4 +6,5 @@ gunicorn==20.0.4
 whitenoise==5.2.0
 Pillow
 requests
-xhtml2pdf==0.2.13
+reportlab==3.6.12
+xhtml2pdf==0.2.11

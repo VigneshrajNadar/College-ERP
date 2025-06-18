@@ -11,6 +11,7 @@ import tempfile
 from datetime import date, datetime
 from xhtml2pdf import pisa
 from io import BytesIO
+from django.contrib.auth.decorators import login_required
 
 # Try importing xhtml2pdf, but don't fail if it's not available
 try:
@@ -64,53 +65,133 @@ def staff_take_attendance(request):
 
 @csrf_exempt
 def get_students(request):
-    subject_id = request.POST.get('subject')
-    session_id = request.POST.get('session')
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid request method'}, status=400)
     
     try:
+        subject_id = request.POST.get('subject')
+        print(f"[DEBUG] get_students view called with subject_id: {subject_id}")
+        
+        if not subject_id:
+            return JsonResponse({'error': 'Subject ID is required'}, status=400)
+
+        # Get the subject and its related course
         subject = get_object_or_404(Subject, id=subject_id)
+        course = subject.course
+        print(f"[DEBUG] Found subject: {subject.name}")
+        print(f"[DEBUG] Associated course: {course.name}")
         
-        # If session_id is provided, use it for attendance
-        if session_id:
-            session = get_object_or_404(Session, id=session_id)
-            students = Student.objects.filter(course_id=subject.course.id, session=session)
-        else:
-            # For result entry, get all students in the course
-            students = Student.objects.filter(course_id=subject.course.id)
+        # Get all students in this course
+        students = Student.objects.filter(
+            course=course
+        ).select_related('admin')
         
+        print(f"[DEBUG] Found {students.count()} students in course {course.name}")
+        
+        # Format student data
         student_data = []
         for student in students:
-            data = {
-                "id": student.id,
-                "name": f"{student.admin.first_name} {student.admin.last_name} ({student.admin.email})"
-            }
-            student_data.append(data)
-        return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
+            try:
+                # Get student name and details
+                admin = student.admin
+                name = f"{admin.first_name} {admin.last_name}".strip()
+                if not name:
+                    name = admin.email.split('@')[0] if admin.email else f"Student {student.id}"
+                
+                data = {
+                    'id': student.id,
+                    'name': name,
+                    'email': admin.email,
+                    'course': course.name
+                }
+                student_data.append(data)
+                print(f"[DEBUG] Added student: {name} (ID: {student.id}, Email: {admin.email})")
+            except Exception as e:
+                print(f"[DEBUG] Error processing student {student.id}: {str(e)}")
+                continue
+        
+        if not student_data:
+            return JsonResponse({
+                'error': f'No students found for course {course.name}. Please assign students to this course.'
+            }, status=404)
+        
+        print(f"[DEBUG] Returning {len(student_data)} students")
+        return JsonResponse(student_data, safe=False)
+        
+    except Subject.DoesNotExist:
+        return JsonResponse({'error': 'Subject not found'}, status=404)
     except Exception as e:
+        print(f"[DEBUG] Error in get_students: {str(e)}")
+        import traceback
+        print(f"[DEBUG] Traceback: {traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
 def save_attendance(request):
-    student_data = request.POST.get('student_ids')
-    date = request.POST.get('date')
-    subject_id = request.POST.get('subject')
-    session_id = request.POST.get('session')
-    students = json.loads(student_data)
     try:
-        session = get_object_or_404(Session, id=session_id)
+        student_data = request.POST.get('student_data')
+        date = request.POST.get('attendance_date')
+        subject_id = request.POST.get('subject')
+        
+        if not all([student_data, date, subject_id]):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Missing required data'
+            }, status=400)
+            
+        # Parse the student data
+        students = json.loads(student_data)
         subject = get_object_or_404(Subject, id=subject_id)
-        attendance = Attendance(session=session, subject=subject, date=date)
-        attendance.save()
-
+        
+        # Get the session from the first student's course
+        # This assumes all students in the same course have the same session
+        if students:
+            first_student = get_object_or_404(Student, id=students[0].get('student_id'))
+            session = first_student.session
+            if not session:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Student has no session assigned'
+                }, status=400)
+        else:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'No students provided'
+            }, status=400)
+        
+        # Create attendance record
+        attendance = Attendance.objects.create(
+            subject=subject,
+            date=date,
+            session=session
+        )
+        
+        # Create attendance reports for each student
         for student_dict in students:
-            student = get_object_or_404(Student, id=student_dict.get('id'))
-            attendance_report = AttendanceReport(student=student, attendance=attendance, status=student_dict.get('status'))
-            attendance_report.save()
+            student = get_object_or_404(Student, id=student_dict.get('student_id'))
+            AttendanceReport.objects.create(
+                student=student,
+                attendance=attendance,
+                status=student_dict.get('status')
+            )
+            
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Attendance saved successfully'
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid student data format'
+        }, status=400)
     except Exception as e:
-        return None
-
-    return HttpResponse("OK")
+        print(f"[DEBUG] Error saving attendance: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Error saving attendance: {str(e)}'
+        }, status=500)
 
 
 def staff_update_attendance(request):
@@ -130,37 +211,99 @@ def staff_update_attendance(request):
 def get_student_attendance(request):
     attendance_date_id = request.POST.get('attendance_date_id')
     try:
-        date = get_object_or_404(Attendance, id=attendance_date_id)
-        attendance_data = AttendanceReport.objects.filter(attendance=date)
+        print(f"[DEBUG] Received attendance_date_id: {attendance_date_id}")
+        
+        if not attendance_date_id:
+            return JsonResponse({'error': 'Attendance date ID is required'}, status=400)
+
+        # Get the attendance record
+        attendance = get_object_or_404(Attendance, id=attendance_date_id)
+        print(f"[DEBUG] Found attendance record for date: {attendance.date}")
+        
+        # Get all attendance reports for this attendance record
+        attendance_data = AttendanceReport.objects.filter(attendance=attendance)
+        print(f"[DEBUG] Found {attendance_data.count()} attendance records")
+        
+        # Format the data
         student_data = []
-        for attendance in attendance_data:
-            data = {"id": attendance.student.admin.id,
-                    "name": attendance.student.admin.last_name + " " + attendance.student.admin.first_name,
-                    "status": attendance.status}
+        for record in attendance_data:
+            student = record.student
+            data = {
+                "id": student.id,  # Use student.id instead of admin.id
+                "name": f"{student.admin.first_name} {student.admin.last_name}",
+                "status": record.status
+            }
             student_data.append(data)
-        return JsonResponse(json.dumps(student_data), content_type='application/json', safe=False)
+            print(f"[DEBUG] Added student: {data['name']} with status: {data['status']}")
+        
+        if not student_data:
+            print("[DEBUG] No attendance records found")
+            return JsonResponse({'error': 'No attendance records found'}, status=404)
+            
+        print(f"[DEBUG] Returning {len(student_data)} student records")
+        return JsonResponse(student_data, safe=False, status=200)
+        
+    except Attendance.DoesNotExist:
+        print(f"[DEBUG] Attendance record not found for ID: {attendance_date_id}")
+        return JsonResponse({'error': 'Attendance record not found'}, status=404)
     except Exception as e:
-        return e
+        print(f"[DEBUG] Error in get_student_attendance: {str(e)}")
+        import traceback
+        print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
 def update_attendance(request):
     student_data = request.POST.get('student_ids')
     date = request.POST.get('date')
-    students = json.loads(student_data)
+    
     try:
+        print(f"[DEBUG] Received update request - date: {date}, student_data: {student_data}")
+        
+        if not date or not student_data:
+            return JsonResponse({'error': 'Missing required data'}, status=400)
+            
+        students = json.loads(student_data)
         attendance = get_object_or_404(Attendance, id=date)
-
+        
+        print(f"[DEBUG] Found attendance record for date: {attendance.date}")
+        print(f"[DEBUG] Updating {len(students)} student records")
+        
+        updated_count = 0
         for student_dict in students:
-            student = get_object_or_404(
-                Student, admin_id=student_dict.get('id'))
-            attendance_report = get_object_or_404(AttendanceReport, student=student, attendance=attendance)
-            attendance_report.status = student_dict.get('status')
-            attendance_report.save()
+            try:
+                student = get_object_or_404(Student, id=student_dict.get('id'))
+                attendance_report = get_object_or_404(
+                    AttendanceReport, 
+                    student=student, 
+                    attendance=attendance
+                )
+                attendance_report.status = student_dict.get('status')
+                attendance_report.save()
+                updated_count += 1
+                print(f"[DEBUG] Updated attendance for student {student.admin.email}: {student_dict.get('status')}")
+            except Exception as e:
+                print(f"[DEBUG] Error updating student {student_dict.get('id')}: {str(e)}")
+                continue
+        
+        print(f"[DEBUG] Successfully updated {updated_count} records")
+        return JsonResponse({
+            'message': f'Successfully updated attendance for {updated_count} students',
+            'status': 'success'
+        })
+        
+    except json.JSONDecodeError:
+        print("[DEBUG] Invalid JSON data received")
+        return JsonResponse({'error': 'Invalid student data format'}, status=400)
+    except Attendance.DoesNotExist:
+        print(f"[DEBUG] Attendance record not found for ID: {date}")
+        return JsonResponse({'error': 'Attendance record not found'}, status=404)
     except Exception as e:
-        return None
-
-    return HttpResponse("OK")
+        print(f"[DEBUG] Error in update_attendance: {str(e)}")
+        import traceback
+        print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 def staff_apply_leave(request):
@@ -272,96 +415,143 @@ def staff_view_notification(request):
     return render(request, "staff_template/staff_view_notification.html", context)
 
 
+@login_required(login_url='login_page')
 def staff_add_result(request):
     staff = get_object_or_404(Staff, admin=request.user)
     subjects = Subject.objects.filter(staff=staff)
+    
     context = {
-        'page_title': 'Result Upload',
-        'subjects': subjects
+        'subjects': subjects,
+        'page_title': 'Add Result'
     }
+    return render(request, 'staff_template/staff_add_result.html', context)
+
+
+@login_required(login_url='login_page')
+def staff_save_result(request):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
     
-    if request.method == 'POST':
-        try:
-            student_id = request.POST.get('student')
-            subject_id = request.POST.get('subject')
-            semester = request.POST.get('semester')
-            academic_year = request.POST.get('academic_year')
-            internal_marks = float(request.POST.get('internal_marks', 0))
-            external_marks = float(request.POST.get('external_marks', 0))
-            practical_marks = float(request.POST.get('practical_marks', 0))
-            
-            student = get_object_or_404(Student, id=student_id)
-            subject = get_object_or_404(Subject, id=subject_id)
-            
-            # Check if result already exists
-            existing_result = StudentResult.objects.filter(
-                student=student,
-                subject=subject,
-                semester=semester,
-                academic_year=academic_year
-            ).first()
-            
-            if existing_result:
-                messages.error(request, 'Result already exists for this student in this semester')
-                return redirect('staff_add_result')
-            
-            # Create new result
-            StudentResult.objects.create(
-                student=student,
-                subject=subject,
-                semester=semester,
-                academic_year=academic_year,
-                internal_marks=internal_marks,
-                external_marks=external_marks,
-                practical_marks=practical_marks
-            )
-            
-            messages.success(request, 'Result added successfully')
-            return redirect('staff_add_result')
-            
-        except Exception as e:
-            messages.error(request, f'Error adding result: {str(e)}')
-            return redirect('staff_add_result')
-    
-    return render(request, "main_app/staff/add_result.html", context)
+    try:
+        # Get form data
+        subject_id = request.POST.get('subject')
+        student_id = request.POST.get('student')
+        semester = request.POST.get('semester')
+        academic_year = request.POST.get('academic_year')
+        internal_marks = float(request.POST.get('internal_marks', 0))
+        external_marks = float(request.POST.get('external_marks', 0))
+        practical_marks = float(request.POST.get('practical_marks', 0))
+        total_marks = float(request.POST.get('total_marks', 0))
+        grade = request.POST.get('grade')
+
+        # Validate data
+        if not all([subject_id, student_id, semester, academic_year]):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'All fields are required'
+            }, status=400)
+
+        # Get subject and student instances
+        subject = get_object_or_404(Subject, id=subject_id)
+        student = get_object_or_404(Student, id=student_id)
+
+        # Check if result already exists
+        result_exists = StudentResult.objects.filter(
+            student=student,
+            subject=subject,
+            semester=semester,
+            academic_year=academic_year
+        ).exists()
+
+        if result_exists:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Result already exists for this student in this subject'
+            }, status=400)
+
+        # Create new result
+        result = StudentResult.objects.create(
+            student=student,
+            subject=subject,
+            semester=semester,
+            academic_year=academic_year,
+            internal_marks=internal_marks,
+            external_marks=external_marks,
+            practical_marks=practical_marks,
+            total_marks=total_marks,
+            grade=grade
+        )
+
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Result added successfully'
+        })
+
+    except Subject.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Subject not found'
+        }, status=404)
+    except Student.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Student not found'
+        }, status=404)
+    except ValueError as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Invalid data: {str(e)}'
+        }, status=400)
+    except Exception as e:
+        print(f"Error saving result: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'An error occurred while saving the result'
+        }, status=500)
 
 
 @csrf_exempt
 def fetch_student_result(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid request method'}, status=400)
+    
     try:
         subject_id = request.POST.get('subject')
         student_id = request.POST.get('student')
         
-        if not subject_id or not student_id:
-            return JsonResponse({'error': 'Subject and student are required'}, status=400)
-            
-        subject = get_object_or_404(Subject, id=subject_id)
-        student = get_object_or_404(Student, id=student_id)
+        print(f"[DEBUG] fetch_student_result called with subject_id: {subject_id}, student_id: {student_id}")
         
-        # Get the latest result for this student and subject
+        if not all([subject_id, student_id]):
+            return JsonResponse({'error': 'Subject and student IDs are required'}, status=400)
+        
+        # Get the result
         result = StudentResult.objects.filter(
-            student=student,
-            subject=subject
-        ).order_by('-academic_year', '-semester').first()
+            student_id=student_id,
+            subject_id=subject_id
+        ).first()
         
         if result:
-            return JsonResponse({
-                'internal_marks': float(result.internal_marks),
-                'external_marks': float(result.external_marks),
-                'practical_marks': float(result.practical_marks),
+            print(f"[DEBUG] Found result for student {student_id} in subject {subject_id}")
+            data = {
                 'semester': result.semester,
-                'academic_year': result.academic_year
-            })
+                'academic_year': result.academic_year,
+                'internal_marks': result.internal_marks,
+                'external_marks': result.external_marks,
+                'practical_marks': result.practical_marks,
+                'total_marks': result.total_marks,
+                'grade': result.grade
+            }
+            return JsonResponse(data)
         else:
+            print(f"[DEBUG] No result found for student {student_id} in subject {subject_id}")
             return JsonResponse({
-                'internal_marks': 0,
-                'external_marks': 0,
-                'practical_marks': 0,
-                'semester': '',
-                'academic_year': ''
-            })
+                'error': 'No result found for this student in this subject'
+            }, status=404)
             
     except Exception as e:
+        print(f"[DEBUG] Error in fetch_student_result: {str(e)}")
+        import traceback
+        print(f"[DEBUG] Traceback: {traceback.format_exc()}")
         return JsonResponse({'error': str(e)}, status=500)
 
 #library
@@ -430,11 +620,19 @@ def generate_result(request):
             messages.error(request, "You don't have permission to generate results for this subject")
             return redirect('staff_home')
             
+        # Use select_related to efficiently fetch related student and admin data
         results = StudentResult.objects.filter(
             subject=subject,
             semester=semester,
             academic_year=academic_year
-        ).order_by('student__admin__email')
+        ).select_related(
+            'student',
+            'student__admin'
+        ).order_by('student__admin__email')  # Order by email (roll number)
+        
+        if not results.exists():
+            messages.warning(request, f"No results found for {subject.name} in semester {semester}, {academic_year}")
+            return redirect('staff_generate_result')
         
         context = {
             'subject': subject,
@@ -445,10 +643,15 @@ def generate_result(request):
             'page_title': f"Result Sheet - {subject.name}"
         }
         
-        return render(request, 'main_app/staff/result_sheet.html', context)
+        return render(request, 'main_app/staff/view_result_sheet.html', context)
     else:
         staff = get_object_or_404(Staff, admin=request.user)
         subjects = Subject.objects.filter(staff=staff)
+        
+        if not subjects.exists():
+            messages.warning(request, "You don't have any subjects assigned to you")
+            return redirect('staff_home')
+            
         context = {
             'subjects': subjects,
             'page_title': 'Generate Result'
@@ -463,10 +666,14 @@ def download_result(request, subject_id, semester, academic_year):
         messages.error(request, "You don't have permission to download results for this subject")
         return redirect('staff_home')
         
+    # Use select_related here as well for PDF generation
     results = StudentResult.objects.filter(
         subject=subject,
         semester=semester,
         academic_year=academic_year
+    ).select_related(
+        'student',
+        'student__admin'
     ).order_by('student__admin__email')
     
     context = {
@@ -483,7 +690,7 @@ def download_result(request, subject_id, semester, academic_year):
         return redirect('staff_generate_result')
     
     try:
-        html_string = render_to_string('staff_template/result_sheet.html', context)
+        html_string = render_to_string('main_app/staff/result_sheet.html', context)
         
         # Create a BytesIO object to receive the PDF data
         buffer = BytesIO()
@@ -501,3 +708,32 @@ def download_result(request, subject_id, semester, academic_year):
     except Exception as e:
         messages.error(request, f"Error generating PDF: {str(e)}")
         return redirect('staff_generate_result')
+
+@csrf_exempt
+def get_attendance_dates(request):
+    subject_id = request.POST.get('subject')
+    session_id = request.POST.get('session')
+    
+    try:
+        subject = get_object_or_404(Subject, id=subject_id)
+        session = get_object_or_404(Session, id=session_id) if session_id else None
+        
+        # Query attendance records
+        query = Attendance.objects.filter(subject=subject)
+        if session:
+            query = query.filter(session=session)
+            
+        # Order by date descending to show most recent first
+        attendance_dates = query.order_by('-date')
+        
+        attendance_data = []
+        for attendance in attendance_dates:
+            data = {
+                "id": attendance.id,
+                "date": attendance.date.strftime('%Y-%m-%d')
+            }
+            attendance_data.append(data)
+            
+        return JsonResponse(attendance_data, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

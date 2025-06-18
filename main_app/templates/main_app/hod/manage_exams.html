@@ -34,22 +34,26 @@
                                         </ul>
                                     </td>
                                     <td>
-                                        {% if exam.date %}
-                                            {{ exam.date|date:"d M Y" }}
-                                            {% if exam.start_time and exam.end_time %}
-                                                <br>
-                                                <small class="text-muted">
-                                                    {{ exam.start_time|time:"H:i" }} - {{ exam.end_time|time:"H:i" }}
-                                                </small>
-                                            {% endif %}
-                                        {% else %}
-                                            <span class="text-muted">Not set</span>
-                                        {% endif %}
+                                        {% for exam_subject in exam.exam_subjects.all %}
+                                            <div class="mb-2">
+                                                <strong>{{ exam_subject.subject.name }}:</strong><br>
+                                                {{ exam_subject.date|date:"d M Y" }}
+                                                {% if exam_subject.start_time and exam_subject.end_time %}
+                                                    <br>
+                                                    <small class="text-muted">
+                                                        {{ exam_subject.start_time|time:"H:i" }} - {{ exam_subject.end_time|time:"H:i" }}
+                                                    </small>
+                                                {% endif %}
+                                            </div>
+                                        {% empty %}
+                                            <span class="text-muted">No subjects scheduled</span>
+                                        {% endfor %}
                                     </td>
                                     <td>{{ exam.hall.name }}</td>
                                     <td>
                                         <a href="{% url 'generate_hall_tickets' exam.id %}" class="btn btn-sm btn-success">Generate Tickets</a>
                                         <a href="{% url 'view_hall_tickets' exam.id %}" class="btn btn-sm btn-info">View Tickets</a>
+                                        <a href="{% url 'delete_exam' exam.id %}" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to delete this exam? This will also delete all associated hall tickets.')">Delete</a>
                                     </td>
                                 </tr>
                                 {% empty %}
