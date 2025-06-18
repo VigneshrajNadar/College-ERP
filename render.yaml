@@ -2,8 +2,11 @@ services:
   - type: web
     name: college-erp
     env: python
-    buildCommand: "./build.sh"
-    startCommand: "gunicorn college_management_system.wsgi:application"
+    buildCommand: |
+      pip install -r requirements.txt
+      python manage.py collectstatic --no-input
+      python manage.py migrate
+    startCommand: "gunicorn college_management_system.wsgi:application --bind 0.0.0.0:$PORT"
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0
@@ -12,4 +15,6 @@ services:
       - key: WEB_CONCURRENCY
         value: 4
       - key: RENDER
-        value: true 
+        value: true
+      - key: PYTHONPATH
+        value: /opt/render/project/src 
