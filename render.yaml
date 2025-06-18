@@ -3,13 +3,14 @@ services:
     name: college-erp
     env: python
     buildCommand: |
+      python -m pip install --upgrade pip
       pip install -r requirements.txt
       python manage.py collectstatic --no-input
       python manage.py migrate
-    startCommand: "gunicorn college_management_system.wsgi:application --bind 0.0.0.0:$PORT"
+    startCommand: "cd /opt/render/project/src && gunicorn college_management_system.wsgi:application --bind 0.0.0.0:$PORT"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.0
+        value: 3.11.0
       - key: SECRET_KEY
         generateValue: true
       - key: WEB_CONCURRENCY
@@ -17,4 +18,6 @@ services:
       - key: RENDER
         value: true
       - key: PYTHONPATH
-        value: /opt/render/project/src 
+        value: /opt/render/project/src
+      - key: DJANGO_SETTINGS_MODULE
+        value: college_management_system.settings 

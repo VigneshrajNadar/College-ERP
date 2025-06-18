@@ -2,11 +2,15 @@
 # exit on error
 set -o errexit
 
+# Upgrade pip
+python -m pip install --upgrade pip
+
 # Install dependencies
 pip install -r requirements.txt
 
-# Set Python path
+# Set environment variables
 export PYTHONPATH=$PYTHONPATH:/opt/render/project/src
+export DJANGO_SETTINGS_MODULE=college_management_system.settings
 
 # Collect static files
 python manage.py collectstatic --no-input
