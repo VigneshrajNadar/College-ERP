@@ -7,10 +7,10 @@ services:
       pip install -r requirements.txt
       python manage.py collectstatic --no-input
       python manage.py migrate
-    startCommand: "cd /opt/render/project/src && gunicorn college_management_system.wsgi:application --bind 0.0.0.0:$PORT"
+    startCommand: "gunicorn --chdir /opt/render/project/src college_management_system.wsgi:application --bind 0.0.0.0:$PORT"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.13.0
       - key: SECRET_KEY
         generateValue: true
       - key: WEB_CONCURRENCY

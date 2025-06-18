@@ -20,7 +20,7 @@ django-crispy-forms==2.1
 filelock==3.18.0
 fonttools==4.56.0
 freetype-py==2.3.0
-gunicorn==20.0.4
+gunicorn==21.2.0
 html5lib==1.1
 idna==3.10
 lxml==5.3.1
