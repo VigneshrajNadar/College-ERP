@@ -98,9 +98,3 @@ College-ERP/
 1. Access the admin panel at `/admin` to manage the system
 2. Different user roles (Admin, HOD, Staff, Student) have different access levels
 3. Follow the on-screen instructions for specific operations
-
-## Contact
-
-Vigneshraj Nadar - [vigneshrajnadar@gmail.com](mailto:vigneshrajnadar@gmail.com)
-
-Project Link: [https://github.com/VigneshrajNadar/College-ERP](https://github.com/VigneshrajNadar/College-ERP)
